@@ -1,0 +1,559 @@
+{
+  "name": "Intake Triage with email trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 'YOUR_TOKEN'"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "=json",
+        "specifyBody": "json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={{\n{\n  model: \"llama-3.1-8b-instant\",\n  temperature: 0.1,\n  response_format: { type: \"json_object\" },\n  messages: [\n    {\n      role: \"system\",\n      content: \"You are an AI triage assistant for a B2B software company. Return only valid JSON. Classify the customer message using exactly one category from this list only: Bug Report, Feature Request, Billing Issue, Technical Question, Incident/Outage. Use these rules: login failures, errors, broken pages, and problems after updates are Bug Report. Requests for new functionality are Feature Request. Invoice or pricing problems are Billing Issue. Questions about setup, configuration, or capability are Technical Question. Service down, dashboard not loading, or multiple users affected are Incident/Outage. Priority must be one of: Low, Medium, High. Confidence score must be an integer from 0 to 100.\"\n    },\n    {\n      role: \"user\",\n      content: `Classify this message and return only JSON with exactly these fields:\n{\n  \"category\": \"\",\n  \"priority\": \"\",\n  \"confidence_score\": 0\n}\n\nSource: ${$json.source}\nMessage: ${$json.raw_message}`\n    }\n  ]\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        0
+      ],
+      "id": "0d294c8c-3d81-4bc7-abd2-918b3673cfe9",
+      "name": "Classify Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map((item, index) => {\n  const content = item.json.choices[0].message.content;\n  const parsed = JSON.parse(content);\n\n  const original = $('Convert Email Format').all(0, $runIndex)[index].json;\n\n  return {\n    json: {\n      message_id: original.message_id,\n      source: original.source,\n      raw_message: original.raw_message,\n      category: parsed.category,\n      priority: parsed.priority,\n      confidence_score: parsed.confidence_score\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "69510a33-ec17-4105-b41a-7a831d0bb50f",
+      "name": "Parse Classification"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 'YOUR_TOKEN'"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "=json",
+        "specifyBody": "json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={{\n{\n  model: \"llama-3.1-8b-instant\",\n  temperature: 0.1,\n  response_format: { type: \"json_object\" },\n  messages: [\n    {\n      role: \"system\",\n      content: \"You are an AI triage assistant for a B2B software company. Return only valid JSON. Extract structured enrichment data from the customer message. You must return: core_issue as one sentence, identifiers as an object, and urgency_signal as a short phrase. Capture account IDs, invoice numbers, error codes, times, auth providers, and any other useful identifiers if present.\"\n    },\n    {\n      role: \"user\",\n      content: `Extract enrichment data from this message and return only JSON with exactly this structure:\n{\n  \"core_issue\": \"\",\n  \"identifiers\": {\n    \"account_id\": null,\n    \"invoice_number\": null,\n    \"error_code\": null,\n    \"mentioned_time\": null,\n    \"auth_provider\": null,\n    \"other\": []\n  },\n  \"urgency_signal\": \"\"\n}\n\nSource: ${$json.source}\nMessage: ${$json.raw_message}`\n    }\n  ]\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        0
+      ],
+      "id": "0f9914cd-cd4f-417d-a2b7-030e53348e9b",
+      "name": "Enrich Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map((item, index) => {\n  const content = item.json.choices[0].message.content;\n  const parsed = JSON.parse(content);\n\n  const original = $('Parse Classification').all(0, $runIndex)[index].json;\n\n  return {\n    json: {\n      message_id: original.message_id,\n      source: original.source,\n      raw_message: original.raw_message,\n      category: original.category,\n      priority: original.priority,\n      confidence_score: original.confidence_score,\n      core_issue: parsed.core_issue,\n      identifiers: parsed.identifiers,\n      urgency_signal: parsed.urgency_signal\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        0
+      ],
+      "id": "8a30b46a-a230-45fb-925c-0ceb24cf109e",
+      "name": "Parse Enrichment"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const data = item.json;\n  const text = (data.raw_message || \"\").toLowerCase();\n\n  let destination_queue = \"Human Review\";\n  let escalation_flag = false;\n  let escalation_reason = \"\";\n  let billing_difference = null;\n\n  if (data.category === \"Bug Report\" || data.category === \"Incident/Outage\") {\n    destination_queue = \"Engineering\";\n  } else if (data.category === \"Feature Request\") {\n    destination_queue = \"Product\";\n  } else if (data.category === \"Billing Issue\") {\n    destination_queue = \"Billing\";\n  } else if (data.category === \"Technical Question\") {\n    destination_queue = \"IT/Security\";\n  }\n\n  const amounts = [...(data.raw_message || \"\").matchAll(/\\$([\\d,]+(?:\\.\\d{1,2})?)/g)]\n    .map(m => parseFloat(m[1].replace(/,/g, \"\")));\n\n  if (amounts.length >= 2) {\n    billing_difference = Math.abs(amounts[0] - amounts[1]);\n  }\n\n  if ((data.confidence_score || 0) < 70) {\n    escalation_flag = true;\n    escalation_reason = \"Low confidence classification\";\n  } else if (\n    text.includes(\"outage\") ||\n    text.includes(\"down for all users\") ||\n    text.includes(\"multiple users affected\") ||\n    text.includes(\"multiple users\") ||\n    text.includes(\"dashboard stopped loading\")\n  ) {\n    escalation_flag = true;\n    escalation_reason = \"Potential outage or multi-user impact\";\n  } else if (\n    data.category === \"Billing Issue\" &&\n    billing_difference !== null &&\n    billing_difference > 500\n  ) {\n    escalation_flag = true;\n    escalation_reason = \"Billing discrepancy greater than $500\";\n  }\n\n  if (escalation_flag) {\n    destination_queue = \"Escalation Queue\";\n  }\n\n  return {\n    json: {\n      ...data,\n      destination_queue,\n      escalation_flag,\n      escalation_reason,\n      billing_difference\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        0
+      ],
+      "id": "161d33e6-57b7-4bf7-98aa-7302f19f9a06",
+      "name": "Route and Escalate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 'YOUR_TOKEN'"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "=json",
+        "specifyBody": "json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={\n  \"model\": \"llama-3.1-8b-instant\",\n  \"temperature\": 0.2,\n  \"response_format\": { \"type\": \"json_object\" },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an AI triage assistant for a B2B software company. Return only valid JSON. Write exactly 2 professional sentences for the receiving team. The summary must be concise, clear, action-oriented, and each sentence must end with a period.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a human-readable summary for this intake record and return only JSON in this format:\\n{\\n  \\\"human_summary\\\": \\\"\\\"\\n}\\n\\nRules:\\n- Write exactly 2 sentences\\n- Do not write 1 sentence\\n- Do not write more than 2 sentences\\n- Mention the issue and the routing/escalation outcome\\n- End both sentences with periods\\n\\nMessage ID: {{$json.message_id}}\\nSource: {{$json.source}}\\nRaw Message: {{$json.raw_message}}\\nCategory: {{$json.category}}\\nPriority: {{$json.priority}}\\nConfidence Score: {{$json.confidence_score}}\\nCore Issue: {{$json.core_issue}}\\nUrgency Signal: {{$json.urgency_signal}}\\nDestination Queue: {{$json.destination_queue}}\\nEscalation Flag: {{$json.escalation_flag}}\\nEscalation Reason: {{$json.escalation_reason}}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1504,
+        0
+      ],
+      "id": "0ff61676-1cee-47f4-ab57-8e36eab67dea",
+      "name": "Generate Summary"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map((item, index) => {\n  const content = item.json.choices[0].message.content;\n  const parsed = JSON.parse(content);\n\n  const original = $('Route and Escalate').all(0, $runIndex)[index].json;\n\n  return {\n    json: {\n      message_id: original.message_id,\n      source: original.source,\n      raw_message: original.raw_message,\n      category: original.category,\n      priority: original.priority,\n      confidence_score: original.confidence_score,\n      core_issue: original.core_issue,\n      account_id: original.identifiers?.account_id || \"\",\n      invoice_number: original.identifiers?.invoice_number || \"\",\n      error_code: original.identifiers?.error_code || \"\",\n      mentioned_time: original.identifiers?.mentioned_time || \"\",\n      auth_provider: original.identifiers?.auth_provider || \"\",\n      other_identifiers: Array.isArray(original.identifiers?.other)\n        ? original.identifiers.other.join(\", \")\n        : \"\",\n      urgency_signal: original.urgency_signal,\n      destination_queue: original.destination_queue,\n      escalation_flag: original.escalation_flag,\n      escalation_reason: original.escalation_reason,\n      billing_difference: original.billing_difference ?? \"\",\n      human_summary: parsed.human_summary\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        0
+      ],
+      "id": "b6bc6bf7-4fde-4f8f-9e31-99c56b961120",
+      "name": "Parse Final Output"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "'YOUR_SHEET_ID'",
+          "mode": "list",
+          "cachedResultName": "Intake Triage",
+          "cachedResultUrl": "'YOUR_SHEET_URL'"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 97104070,
+          "mode": "list",
+          "cachedResultName": "Sheet2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/'YOUR_SHEET_ID'/edit#gid=97104070"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $json.message_id }}",
+            "source": "={{ $json.source }}",
+            "raw_message": "={{ $json.raw_message }}",
+            "category": "={{ $json.category }}",
+            "priority": "={{ $json.priority }}",
+            "confidence_score": "={{ $json.confidence_score }}",
+            "core_issue": "={{ $json.core_issue }}",
+            "account_id": "={{ $json.account_id }}",
+            "invoice_number": "={{ $json.invoice_number }}",
+            "error_code": "={{ $json.error_code }}",
+            "mentioned_time": "={{ $json.mentioned_time }}",
+            "auth_provider": "={{ $json.auth_provider }}",
+            "other_identifiers": "={{ $json.other_identifiers }}",
+            "urgency_signal": "={{ $json.urgency_signal }}",
+            "destination_queue": "={{ $json.destination_queue }}",
+            "escalation_flag": "={{ $json.escalation_flag }}",
+            "escalation_reason": "={{ $json.escalation_reason }}",
+            "billing_difference": "={{ $json.billing_difference }}",
+            "human_summary": "={{ $json.human_summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_message",
+              "displayName": "raw_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence_score",
+              "displayName": "confidence_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "core_issue",
+              "displayName": "core_issue",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "account_id",
+              "displayName": "account_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "invoice_number",
+              "displayName": "invoice_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_code",
+              "displayName": "error_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mentioned_time",
+              "displayName": "mentioned_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "auth_provider",
+              "displayName": "auth_provider",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "other_identifiers",
+              "displayName": "other_identifiers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency_signal",
+              "displayName": "urgency_signal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "destination_queue",
+              "displayName": "destination_queue",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalation_flag",
+              "displayName": "escalation_flag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalation_reason",
+              "displayName": "escalation_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "billing_difference",
+              "displayName": "billing_difference",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "human_summary",
+              "displayName": "human_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1920,
+        0
+      ],
+      "id": "7015bff0-3d24-4782-8518-07b7b1fd4e21",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "'YOUR_SHEET_CREDENTIAL_ID'",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "q": "subject:\"Test 1\"",
+          "readStatus": "unread"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "8d7d29e1-1663-44e1-98e5-0b17d59c196e",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "'YOUR_GMAIL_CREDENTIAL_ID'",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const email = item.json;\n\n  return {\n    json: {\n      message_id: email.id || String(Date.now()),\n      source: \"Email\",\n      raw_message: email.snippet || email.Subject || \"\"\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "d225052f-9b2e-43cd-ad48-856f342c9c6d",
+      "name": "Convert Email Format"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Classify Request": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "Enrich Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Request": {
+      "main": [
+        [
+          {
+            "node": "Parse Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Route and Escalate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route and Escalate": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Parse Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Final Output": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Convert Email Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Email Format": {
+      "main": [
+        [
+          {
+            "node": "Classify Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "59169548-2400-45b5-befe-966310aadfb2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "'YOUR_INSTANCE_ID'"
+  },
+  "id": "GNA39aHPxSEGVceN",
+  "tags": []
+}
