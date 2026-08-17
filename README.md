@@ -10,116 +10,139 @@ The workflow automatically processes incoming emails, classifies requests using 
 
 ## How It Works
 
-### 1. Email Trigger
+### 1. Gmail Trigger
 
-The workflow starts when a new email is received through Gmail.
+The workflow starts automatically when a new email is received.
 
 ![Gmail Trigger](screenshots/gmail-trigger.png)
 
-### 2. Email Processing
+### 2. AI Classification
 
-The incoming email is converted into a structured format and prepared for processing.
+The incoming request is analyzed using an AI model to identify its type and relevant characteristics. The classification result is then parsed into a structured format for further processing.
 
-![Email Formatting](screenshots/email-formatting.png)
+![AI Classification](screenshots/ai-classification.png)
 
-### 3. AI Classification
+### 3. AI Enrichment
 
-The request is analyzed using an AI model to determine the appropriate classification and relevant attributes.
+The classified request is enriched with additional structured information to provide more context for downstream decision-making.
 
-![Classification Parsing](screenshots/classification-parsing.png)
+![AI Enrichment](screenshots/ai-enrichment.png)
 
-### 4. Request Enrichment
+### 4. Routing & Escalation
 
-The workflow extracts and enriches the request with additional structured information.
+The workflow evaluates the classified and enriched request to determine the appropriate routing and escalation path.
 
-![Enrichment Parsing](screenshots/enrichment-parsing.png)
+![Routing & Escalation](screenshots/routing-and-escalation.png)
 
-### 5. Routing & Escalation
+### 5. Final Output
 
-Based on the classification and enriched information, the workflow determines the appropriate routing and escalation path.
+The processed information is transformed into a structured final output that can be stored and used for further processing.
 
-![Routing and Escalation](screenshots/routing-and-escalation.png)
+![Final Output](screenshots/final-output.png)
 
-### 6. Final Output
-
-The final AI-generated result is parsed into a structured format before being stored for further processing.
-
-![Final Output](screenshots/final-output-parsing.png)
-
-## Architecture
+## Workflow Architecture
 
 ```text
 Gmail Trigger
       ↓
-Convert Email Format
-      ↓
-Process Incoming Messages
+Email Processing
       ↓
 AI Classification
       ↓
-Parse Classification
+Classification Parsing
       ↓
 AI Enrichment
       ↓
-Parse Enrichment
+Enrichment Parsing
       ↓
-Route & Escalate
+Routing & Escalation
       ↓
-Generate Final Output
-      ↓
-Parse Final Output
+Final Output Generation
       ↓
 Google Sheets
 ```
-
-## Technologies
-
-* **n8n** — workflow automation and orchestration
-* **Gmail** — email trigger
-* **AI / LLM** — classification, enrichment, and summarization
-* **Google Sheets** — structured data storage
-* **REST APIs** — external service integration
-* **JavaScript** — data processing and transformation
 
 ## Key Features
 
 * Automated email intake
 * AI-powered request classification
-* Structured data extraction
-* Request enrichment
+* Structured information extraction
+* AI-based request enrichment
 * Conditional routing
 * Escalation logic
-* AI-generated summaries
+* Structured final output
 * Automated data storage
 * End-to-end workflow orchestration
 
+## Technologies
+
+* **n8n** — workflow automation and orchestration
+* **Gmail** — email trigger and data source
+* **AI / LLM** — classification and enrichment
+* **Google Sheets** — structured data storage
+* **REST APIs** — external service integration
+* **JavaScript** — data transformation and workflow logic
+
+## Project Structure
+
+```text
+ai-email-intake-triage-n8n/
+│
+├── README.md
+│
+├── screenshots/
+│   ├── workflow-overview.png
+│   ├── gmail-trigger.png
+│   ├── ai-classification.png
+│   ├── ai-enrichment.png
+│   ├── routing-and-escalation.png
+│   └── final-output.png
+│
+├── workflow/
+│   └── ai-email-intake-triage.json
+│
+└── docs/
+    └── ...
+```
+
+## Import & Setup
+
+To run the workflow in n8n:
+
+1. Import the workflow JSON from the `workflow/` directory.
+2. Configure your Gmail credentials.
+3. Configure the required AI/LLM credentials.
+4. Configure your Google Sheets credentials.
+5. Configure any required external API credentials.
+6. Test the workflow using sample emails.
+7. Activate the workflow.
+
+## Credentials & Security
+
+No private credentials or API keys are included in this repository.
+
+When importing the workflow, configure your own credentials for the required services.
+
+Sensitive information and private credentials should never be committed to GitHub.
+
 ## Workflow File
 
-The complete n8n workflow is available in:
+The complete n8n workflow is available here:
 
 `workflow/ai-email-intake-triage.json`
 
 The workflow can be imported directly into an n8n instance.
 
-## Setup
+## What This Project Demonstrates
 
-1. Import the workflow JSON into n8n.
-2. Configure your Gmail credentials.
-3. Configure the required AI/LLM credentials.
-4. Configure your Google Sheets credentials.
-5. Configure any required external API credentials.
-6. Test the workflow with sample emails.
-7. Activate the workflow.
-
-## Credentials & Security
-
-Credentials and API keys are not included in this repository.
-
-When importing the workflow, configure your own credentials for the required services.
-
-## Project Documentation
-
-Additional documentation is available in the `docs/` directory.
-
-* `architecture.pdf` — workflow architecture and design
-* `prompt-documentation.pdf` — AI prompt documentation
+* AI and LLM integration
+* Workflow automation
+* Prompt-based classification
+* Structured data extraction
+* API integration
+* Conditional logic
+* Automated routing and escalation
+* Data transformation
+* AI-powered processing
+* Multi-service integration
+* n8n workflow design
